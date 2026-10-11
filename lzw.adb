@@ -68,11 +68,11 @@ function Lzw return Integer is
         end loop;
         Encoded.Append(H(W));
 
-        --Put("Encoded : ");
-        --for Index of Encoded loop
-        --    Put(Index'Image & " ");
-        --end loop;
-        --Put_Line("");
+        Put("Encoded : ");
+        for Index of Encoded loop
+            Put(Index'Image & " ");
+        end loop;
+        Put_Line("");
 
         --Put_Line("H.Length = " & H.Length'Image);
         return Encoded;
@@ -142,16 +142,72 @@ function Lzw return Integer is
 
     end Pack_Encoded_To_File;
     
-    Encoded: Index_Vectors.Vector;
+    procedure Decode_Lzw (Encoded_File_Path: String) is
+        use Character_IO;
+        Encoded_File: Character_IO.File_Type;
+        Byte: Character; -- current read byte from encoded file (char)
+
+        Bits_To_Read: Integer := 9;
+        Remaining_Bits_To_Read: Integer := Bits_To_Read;
+        V: Long_Long_Integer := 0; -- Will correspond to the value of an index in dictionnary
+
+        W:  Unbounded_String; -- TODO: find a better name
+        WC: Unbounded_String;
+
+        H: Encoding_Hashed_Maps.Map;
+
+    begin
+        Initialize_Alphabet(H);
+        Open (File => Encoded_File, Mode => In_File, Name => Encoded_File_Path);
+
+        Put("Decoded : ");
+
+        while Remaining_Bits_To_Read > 0 and not End_Of_File(Encoded_File) loop
+            if Remaining_Bits_To_Read = 0 then
+                Remaining_Bits_To_Read := Bits_To_Read;
+            end if;
+
+            Read(Encoded_File, Byte);
+            Remaining_Bits_To_Read := Remaining_Bits_To_Read - 8;
+
+            if Remaining_Bits_To_Read > 0 then
+                V := V + Long_Long_Integer(Shift_Left(Unsigned_64(Character'Pos(Byte)),Remaining_Bits_To_Read));
+            else
+                V := V + Long_Long_Integer(Shift_Right(Unsigned_64(Character'Pos(Byte)),abs Remaining_Bits_To_Read));
+                Put(V'Image & " ");
+                -- here <=== TODO: we found the index! look up in dictionnary at key V
+                -- here <=== TODO: so ..... write value from this index to decoded file
+
+                ---- TODO
+                ---- NOT V but the last inserted index in running dictionnary!
+                --if V >= (2 ** Bits_To_Read) - 1 then
+                --    Bits_To_Read := Bits_To_Read + 1;
+                --end if;
+
+                --   0 1011010
+                --   ^ 
+                -- new V for next iteration
+                V := Long_Long_Integer(Character'Pos(Byte)) mod 2 ** (abs Remaining_Bits_To_Read);
+                V := Long_Long_Integer(Shift_Left(Unsigned_64(V),Bits_To_Read - abs Remaining_Bits_To_Read ));
+                Remaining_Bits_To_Read := Bits_To_Read - abs Remaining_Bits_To_Read;
+            end if;
+        end loop;
+
+
+
+
+        Close(Encoded_File);
+    end Decode_Lzw;
+
 begin
 
-    --Encoded := Encode_Lzw("tobeornottobe.txt");
-    Encoded := Encode_Lzw("/home/luc/stack/pacman.log");
-    Pack_Encoded_To_File(Encoded, "encoded.lzw");
+    Pack_Encoded_To_File(Encode_Lzw("tobeornottobe.txt"), "tobeornottobe.lzw");
+    Decode_Lzw("tobeornottobe.lzw");
+
+    --Pack_Encoded_To_File(Encode_Lzw("/home/luc/stack/pacman.log"), "pacman.lzw");
+    
+    --Pack_Encoded_To_File(Encode_Lzw("README.md"), "readme.lzw");
+    --Decode_Lzw("readme.lzw");
 
     return 0;
 end Lzw;
-
--- Check sources:
--- https://vapier.github.io/ncompress/
-
