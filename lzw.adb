@@ -88,11 +88,11 @@ function Lzw return Integer is
         end loop;
         Encoded.Append(H(W));
 
-        Put("Encoded : ");
-        for Index of Encoded loop
-            Put(Index'Image & " ");
-        end loop;
-        Put_Line("");
+        --Put("Encoded : ");
+        --for Index of Encoded loop
+        --    Put(Index'Image & " ");
+        --end loop;
+        --Put_Line("");
 
         --Put_Line("H.Length = " & H.Length'Image);
         return Encoded;
@@ -125,7 +125,7 @@ function Lzw return Integer is
 
             if X >= 2 ** Bits_To_Pack then
                 Bits_To_Pack := Bits_To_Pack + 1;
-                Put_Line("Packing size = " & Bits_To_Pack'Image & " bits");
+                --Put_Line("Packing size = " & Bits_To_Pack'Image & " bits");
             end if;
 
             Bits_To_Pack_Current := Bits_To_Pack;
@@ -182,6 +182,7 @@ function Lzw return Integer is
         Byte_Current_Value: Long_Long_Integer := 0;
 
         X: Long_Long_Integer;
+        Last_Index: Long_Long_Integer;
         Prev_V_To_Pack : Long_Long_Integer;
         V_To_Pack      : Long_Long_Integer;
         Byte_To_Write  : Long_Long_Integer;
@@ -189,26 +190,34 @@ function Lzw return Integer is
 
         Initialize_Alphabet_Encoding(H);
 
-        Open (File => Input_File, Mode => In_File, Name => Input_File_Path);
-        Create(File => Output_File, Mode => Out_File, Name => Output_File_Path);
+        Open (File => Input_File, 
+              Mode => In_File, 
+              Name => Input_File_Path);
+
+        Create(File => Output_File, 
+               Mode => Out_File,
+               Name => Output_File_Path);
 
         --Put("Raw input: ");
         while not End_Of_File (Input_File) loop
+
             Read(Input_File, C); 
+
             WC := W & C;
+
             if H.Contains(WC) then
                 W := WC;
+
             else
                 H.Include(WC, Long_Long_Integer(H.Length));
 
-                X := Long_Long_Integer(H(W));
-                --Put(To_String(W));
+                X := Long_Long_Integer(H(W)); -- index
 
                 Bits_To_Pack_Current := Bits_To_Pack;
 
                 Pack_Loop:
                 while True loop
-                    S := Bits_To_Pack_Current - Byte_Remaining_Bits; -- Shifting value
+                    S := Bits_To_Pack_Current - Byte_Remaining_Bits;
                     V_To_Pack := Long_Long_Integer(Shift_Right(Unsigned_64(X),S));
                     X := X mod (2 ** S);
                     Bits_To_Pack_Current := S;
@@ -238,41 +247,49 @@ function Lzw return Integer is
             end if;
         end loop;
 
-        -- just for last value
-        X := Long_Long_Integer(H(W));
+        ---- just for last value, we are forcibly on W contained in H
+        ---- so we have to write W index in encoded
+        Last_Index := Long_Long_Integer(H(W));
         Bits_To_Pack_Current := Bits_To_Pack;
 
-        Pack_Loop2:
+        Last_Pack_Loop:
         while True loop
-            S := Bits_To_Pack_Current - Byte_Remaining_Bits; -- Shifting value
-            V_To_Pack := Long_Long_Integer(Shift_Right(Unsigned_64(X),S));
-            X := X mod (2 ** S);
+            S := Bits_To_Pack_Current - Byte_Remaining_Bits;
+            V_To_Pack := Long_Long_Integer(Shift_Right(Unsigned_64(Last_Index),S));
+            Last_Index := Last_Index mod (2 ** S);
             Bits_To_Pack_Current := S;
             Prev_V_To_Pack := Long_Long_Integer(Shift_Left(Unsigned_64(Byte_Current_Value), Byte_Remaining_Bits));
             Byte_To_Write  := Long_Long_Integer(Unsigned_64(Prev_V_To_Pack) or Unsigned_64(V_To_Pack));
 
             Write(Output_File,Character'Val(Byte_To_Write));
+            --Put(">>" & Byte_To_Write'Image);
+
             Byte_Remaining_Bits := 8;
 
             if Bits_To_Pack_Current >= 8 then
                 Byte_Current_Value := 0;
             else
                 Byte_Remaining_Bits := 8 - Bits_To_Pack_Current;
-                Byte_Current_Value := X;
-                exit Pack_Loop2;
+                Byte_Current_Value := Last_Index;
+                Byte_To_Write  := Long_Long_Integer(Shift_Left(Unsigned_64(Byte_Current_Value),Byte_Remaining_Bits));
+                Write(Output_File,Character'Val(Byte_To_Write));
+                -- TODO: do i need to pad with zero's behind?
+                exit Last_Pack_Loop;
             end if;
 
-        end loop Pack_Loop2;
+        end loop Last_Pack_Loop;
 
         Close(Input_File);
         Close(Output_File);
 
     end Encode_Lzw;
     
-    procedure Decode_Lzw (Encoded_File_Path: String) is
+    procedure Decode_Lzw (Encoded_File_Path: String; Output_File_Path: String) is
         use Character_IO;
         Encoded_File: Character_IO.File_Type;
         Byte: Character; -- current read byte from encoded file (char)
+        
+        Decoded_File: Character_IO.File_Type;
 
         C : Character;
 
@@ -287,7 +304,14 @@ function Lzw return Integer is
         H: Decoding_Hashed_Maps.Map;
     begin
         Initialize_Alphabet_Decoding(H);
-        Open (File => Encoded_File, Mode => In_File, Name => Encoded_File_Path);
+
+        Open (File => Encoded_File, 
+              Mode => In_File, 
+              Name => Encoded_File_Path);
+
+        Create (File => Decoded_File,
+                Mode => Out_File,
+                Name => Output_File_Path);
 
         -----------------------------------------
         while True loop
@@ -298,14 +322,16 @@ function Lzw return Integer is
                 V := V + Long_Long_Integer(Shift_Left(Unsigned_64(Character'Pos(Byte)),Remaining_Bits_To_Read));
             else
                 V := V + Long_Long_Integer(Shift_Right(Unsigned_64(Character'Pos(Byte)),abs Remaining_Bits_To_Read));
-                Put(V'Image & " ");
+                --Put(V'Image & " ");
 
                 W := H(V);
-                Decoded := W;
+                for I in 1..Length(W) loop
+                    Write(Decoded_File, Element(W,I));
+                end loop;
 
                 if H.Length >= (2 ** Bits_To_Read) - 1 then
                     Bits_To_Read := Bits_To_Read + 1;
-                    Put_Line("H.Length = " & H.Length'Image & " ; Unpacking size = " & Bits_To_Read'Image & " bits");
+                    --Put_Line("H.Length = " & H.Length'Image & " ; Unpacking size = " & Bits_To_Read'Image & " bits");
                 end if;
 
                 -- new V for next iteration
@@ -317,7 +343,7 @@ function Lzw return Integer is
         end loop;
         ----------------------------------
 
-        Put("Decoded : ");
+        --Put("Decoded : ");
 
         while Remaining_Bits_To_Read > 0 and not End_Of_File(Encoded_File) loop
 
@@ -344,8 +370,13 @@ function Lzw return Integer is
                     --Put("=>> " & To_String(New_Entry));
                 end if;
 
-                --Put(To_String(New_Entry);
-                Decoded := Decoded & New_Entry;
+                --Put(To_String(New_Entry));
+                --Decoded := Decoded & New_Entry;
+                for I in 1..Length(New_Entry) loop
+                    Write(Decoded_File, Element(New_Entry,I));
+                end loop;
+
+
                 H.Include(Long_Long_Integer(H.Length), W & Element(New_Entry,1));
                 W := New_Entry;
 
@@ -362,17 +393,11 @@ function Lzw return Integer is
             end if;
         end loop;
 
-        --Put(V'Image & " ");
-        if H.Contains(V) then
-            New_Entry := H(V);
-        else
-            New_Entry := W & Element(W,1); -- this is how you access a char in unbounded string... lol
-        end if;
-        Decoded := Decoded & New_Entry;
+        --Decoded := Decoded & New_Entry;
 
         --Put_Line("");
         --Put_Line("Decoded String: " & To_String(Decoded));
-        Put_Line(To_String(Decoded));
+        --Put_Line(To_String(Decoded));
 
         Close(Encoded_File);
     end Decode_Lzw;
@@ -382,12 +407,12 @@ begin
     --Pack_Encoded_To_File(Encode_Lzw("/home/luc/stack/pacman.log"), "pacman.lzw");
     
     --Encode_Lzw("tobeornottobe.txt","tobeornottobe.lzw");
-    --Decode_Lzw("tobeornottobe.lzw");
+    --Decode_Lzw("tobeornottobe.lzw","tobeornottobe.decoded");
 
-    --Encode_Lzw("README.md", "readme.lzw");
-    --Decode_Lzw("readme.lzw");
+    Encode_Lzw("README.md", "readme.lzw");
+    Decode_Lzw("readme.lzw","readme.decoded");
 
     --Encode_Lzw("/home/luc/stack/pacman.log", "pacman.lzw");
-    Decode_Lzw("pacman.lzw");
+    --Decode_Lzw("pacman.lzw", "pacman.decoded");
     return 0;
 end Lzw;
