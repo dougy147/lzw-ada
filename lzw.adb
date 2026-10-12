@@ -1,39 +1,9 @@
-with Ada.Text_IO; use Ada.Text_IO;
-with Ada.Containers; use Ada.Containers;
-with Ada.Containers.Indefinite_Hashed_Maps;
-with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
-with Ada.Strings.Unbounded.Hash;
-with Ada.Sequential_IO;
-with Interfaces; use Interfaces;
-
-with Ada.Exceptions; use Ada.Exceptions;
---with Ada.Directories; use Ada.Directories;
-
-function Lzw return Integer is
-
-    -- https://learn.adacore.com/courses/intro-to-ada/chapters/exceptions.html
-    package Exceptions is
-        Unreachable : exception;
-    end Exceptions;
-
-    package Character_IO is new Ada.Sequential_IO (Character);
-
-    package Encoding_Hashed_Maps is new Ada.Containers.Indefinite_Hashed_Maps
-        (Key_Type        => Unbounded_String,
-         Element_Type    => Integer,
-         Hash            => Ada.Strings.Unbounded.Hash,
-         Equivalent_Keys => "=");
+package body Lzw is
 
     function Integer_Hash (Key: Integer) return Hash_Type is
     begin
         return Hash_Type(Key);
     end Integer_Hash;
-
-    package Decoding_Hashed_Maps is new Ada.Containers.Indefinite_Hashed_Maps
-        (Key_Type        => Integer,
-         Element_Type    => Unbounded_String,
-         Hash            => Integer_Hash,
-         Equivalent_Keys => "=");
 
     procedure Initialize_Encoding_Dictionnary (D: out Encoding_Hashed_Maps.Map) is
         Current_String:  Unbounded_String;
@@ -191,8 +161,6 @@ function Lzw return Integer is
 
     end Encode_Lzw;
 
-
-    
     procedure Decode_Lzw (Input_File_Path: String; Output_File_Path: String) is
         use Character_IO;
         Input_File: Character_IO.File_Type;
@@ -308,17 +276,15 @@ function Lzw return Integer is
 
     end Decode_Lzw;
 
-begin
-
     --Pack_Encoded_To_File(Encode_Lzw("/home/luc/stack/pacman.log"), "pacman.lzw");
     
     --Encode_Lzw("tobeornottobe.txt","tobeornottobe.lzw");
     --Decode_Lzw("tobeornottobe.lzw","tobeornottobe.decoded");
 
-    Encode_Lzw("README.md", "readme.lzw");
-    Decode_Lzw("readme.lzw","readme.decoded");
+    --Encode_Lzw("README.md", "readme.lzw");
+    --Decode_Lzw("readme.lzw","readme.decoded");
 
-    --Encode_Lzw("/home/luc/stack/pacman.log", "pacman.lzw");
+    --Encode_Lzw("pacman.log", "pacman.lzw");
     --Decode_Lzw("pacman.lzw", "pacman.decoded");
-    return 0;
+    --return 0;
 end Lzw;
