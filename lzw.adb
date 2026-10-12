@@ -1,194 +1,91 @@
 with Ada.Text_IO; use Ada.Text_IO;
-with Ada.Sequential_IO;
-
 with Ada.Containers; use Ada.Containers;
-with Ada.Containers.Vectors;
 with Ada.Containers.Indefinite_Hashed_Maps;
-
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 with Ada.Strings.Unbounded.Hash;
-
-with Ada.Directories; use Ada.Directories;
-
+with Ada.Sequential_IO;
 with Interfaces; use Interfaces;
 
+with Ada.Exceptions; use Ada.Exceptions;
+--with Ada.Directories; use Ada.Directories;
+
 function Lzw return Integer is
+
+    -- https://learn.adacore.com/courses/intro-to-ada/chapters/exceptions.html
+    package Exceptions is
+        Unreachable : exception;
+    end Exceptions;
 
     package Character_IO is new Ada.Sequential_IO (Character);
 
     package Encoding_Hashed_Maps is new Ada.Containers.Indefinite_Hashed_Maps
         (Key_Type        => Unbounded_String,
-         Element_Type    => Long_Long_Integer,
+         Element_Type    => Integer,
          Hash            => Ada.Strings.Unbounded.Hash,
          Equivalent_Keys => "=");
 
-    function Long_Long_Integer_Hash (Key: Long_Long_Integer) return Hash_Type is
+    function Integer_Hash (Key: Integer) return Hash_Type is
     begin
         return Hash_Type(Key);
-    end Long_Long_Integer_Hash;
-    
+    end Integer_Hash;
+
     package Decoding_Hashed_Maps is new Ada.Containers.Indefinite_Hashed_Maps
-        (Key_Type        => Long_Long_Integer,
+        (Key_Type        => Integer,
          Element_Type    => Unbounded_String,
-         Hash            => Long_Long_Integer_Hash,
+         Hash            => Integer_Hash,
          Equivalent_Keys => "=");
 
-    procedure Initialize_Alphabet_Encoding (H: out Encoding_Hashed_Maps.Map) is
-        W:  Unbounded_String; -- TODO: find a better name
+    procedure Initialize_Encoding_Dictionnary (D: out Encoding_Hashed_Maps.Map) is
+        Current_String:  Unbounded_String;
     begin
         for I in 0..255 loop
-            W := To_Unbounded_String("") & Character'Val(I);
-            H.Include(W, Long_Long_Integer(I));
+            Current_String := To_Unbounded_String("") & Character'Val(I);
+            D.Include(Current_String, Integer(I));
         end loop;
     end;
     
-    procedure Initialize_Alphabet_Decoding (H: out Decoding_Hashed_Maps.Map) is
-        W:  Unbounded_String; -- TODO: find a better name
+    procedure Initialize_Decoding_Dictionnary (D: out Decoding_Hashed_Maps.Map) is
+        Current_String:  Unbounded_String;
     begin
         for I in 0..255 loop
-            W := To_Unbounded_String("") & Character'Val(I);
-            H.Include(Long_Long_Integer(I),W);
+            Current_String := To_Unbounded_String("") & Character'Val(I);
+            D.Include(Integer(I),Current_String);
         end loop;
     end;
     
-    package Index_Vectors is new Ada.Containers.Vectors
-        (Index_Type   => Positive,
-         Element_Type => Long_Long_Integer);
-
-    function Encode_Lzw_To_Index_Vector (File_Path: String) return Index_Vectors.Vector is
-        use Character_IO;
-        File: Character_IO.File_Type;
-        C: Character; -- current read byte from file (char)
-
-        W:  Unbounded_String; -- TODO: find a better name
-        WC: Unbounded_String;
-
-        H: Encoding_Hashed_Maps.Map;
-
-        Encoded: Index_Vectors.Vector;
-    begin
-
-        Initialize_Alphabet_Encoding(H);
-
-        Open (File => File, Mode => In_File, Name => File_Path);
-
-        --Put("Raw input: ");
-        while not End_Of_File (File) loop
-            Read(File, C); 
-            --Put(C);
-            WC := W & C;
-            if H.Contains(WC) then
-                W := WC;
-            else
-                H.Include(WC, Long_Long_Integer(H.Length));
-                --Put_Line(To_String(WC));
-                Encoded.Append(H(W));
-                W := To_Unbounded_String("") & C;
-            end if;
-        end loop;
-        Encoded.Append(H(W));
-
-        --Put("Encoded : ");
-        --for Index of Encoded loop
-        --    Put(Index'Image & " ");
-        --end loop;
-        --Put_Line("");
-
-        --Put_Line("H.Length = " & H.Length'Image);
-        return Encoded;
-    end Encode_Lzw_To_Index_Vector;
-
-    procedure Pack_Encoded_To_File(Encoded: Index_Vectors.Vector; Output_File_Path: String) is
-
-        use Character_IO;
-        Output_File: Character_IO.File_Type;
-
-
-        Bits_To_Pack: Integer := 9;
-        Bits_To_Pack_Current: Integer;
-
-        Byte_Remaining_Bits : Integer := 8;
-        S : Integer;
-        Byte_Current_Value  : Long_Long_Integer := 0;
-
-        X: Long_Long_Integer;
-        Prev_V_To_Pack : Long_Long_Integer;
-        V_To_Pack      : Long_Long_Integer;
-        Byte_To_Write  : Long_Long_Integer;
-    begin
-
-        Create(File => Output_File, Mode => Out_File, Name => Output_File_Path);
-
-        --Put("Packed : ");
-        for Index of Encoded loop
-            X := Index;
-
-            if X >= 2 ** Bits_To_Pack then
-                Bits_To_Pack := Bits_To_Pack + 1;
-                --Put_Line("Packing size = " & Bits_To_Pack'Image & " bits");
-            end if;
-
-            Bits_To_Pack_Current := Bits_To_Pack;
-            Pack_Loop:
-            while True loop
-                S := Bits_To_Pack_Current - Byte_Remaining_Bits; -- Shifting value
-                V_To_Pack := Long_Long_Integer(Shift_Right(Unsigned_64(X),S));
-                X := X mod (2 ** S);
-                Bits_To_Pack_Current := S;
-                Prev_V_To_Pack := Long_Long_Integer(Shift_Left(Unsigned_64(Byte_Current_Value), Byte_Remaining_Bits));
-                Byte_To_Write  := Long_Long_Integer(Unsigned_64(Prev_V_To_Pack) or Unsigned_64(V_To_Pack));
-                --Put(Byte_To_Write'Image & " ");
-                --Put_Line(Prev_V_To_Pack'Image & " | " & V_To_Pack'Image & " => " & Byte_To_Write'Image & " ");
-                Write(Output_File,Character'Val(Byte_To_Write));
-                Byte_Remaining_Bits := 8;
-                if Bits_To_Pack_Current >= 8 then
-                    Byte_Current_Value := 0;
-                else
-                    Byte_Remaining_Bits := 8 - Bits_To_Pack_Current;
-                    Byte_Current_Value := X;
-                    exit Pack_Loop;
-                end if;
-            end loop Pack_Loop;
-
-        end loop;
-
-        if Byte_Remaining_Bits /= 8 then
-            Byte_To_Write := Long_Long_Integer(Shift_Left(Unsigned_64(Byte_Current_Value),Byte_Remaining_Bits));
-            Write(Output_File,Character'Val(Byte_To_Write));
-            --Put(Byte_To_Write'Image & " ");
-        end if;
-
-        Close(Output_File);
-
-    end Pack_Encoded_To_File;
-
-
     procedure Encode_Lzw (Input_File_Path: String; Output_File_Path: String) is
         use Character_IO;
         Input_File: Character_IO.File_Type;
         Output_File: Character_IO.File_Type;
-        C: Character; -- current read byte from file (char)
 
-        W:  Unbounded_String; -- TODO: find a better name
-        WC: Unbounded_String;
+        Dictionnary: Encoding_Hashed_Maps.Map;
 
-        H: Encoding_Hashed_Maps.Map;
+        -- TODO: Allow read size to be flexible for speed increase.
+        -- For now we simply read Input_File byte by byte.
+        C: Character; -- current byte read from input file
+        Current_String           : Unbounded_String;
+        Current_String_Plus_Char : Unbounded_String;
+ 
+        -- TODO: We start encoding indexes in 9-bits and have
+        -- no upper limit. Hitting a 64-bits index limits seems... highly improbable
+        -- but we should certainly limit dictionnary length to ease on memory.
+        Bits_Pack_Size: Integer := 9;
+        Remaining_Bits_To_Pack_For_Current_Index: Integer;
 
-        Bits_To_Pack: Integer := 9;
-        Bits_To_Pack_Current: Integer;
+        -- NOTE: Remember we read Input_File byte by byte.
+        -- Hence we use this variable name and this 8 value. <|:^)
+        Byte_Free_Bits : Integer := 8;
 
-        Byte_Remaining_Bits : Integer := 8;
-        S : Integer;
-        Byte_Current_Value: Long_Long_Integer := 0;
+        Byte_Value           : Integer := 0;
+        Byte_Value_To_Append : Integer;
 
-        X: Long_Long_Integer;
-        Last_Index: Long_Long_Integer;
-        Prev_V_To_Pack : Long_Long_Integer;
-        V_To_Pack      : Long_Long_Integer;
-        Byte_To_Write  : Long_Long_Integer;
+        Index      : Integer;
+        Last_Index : Integer;
+
+        Bit_Shift_Size : Integer; -- for readability
     begin
 
-        Initialize_Alphabet_Encoding(H);
+        Initialize_Encoding_Dictionnary(Dictionnary);
 
         Open (File => Input_File, 
               Mode => In_File, 
@@ -198,208 +95,217 @@ function Lzw return Integer is
                Mode => Out_File,
                Name => Output_File_Path);
 
-        --Put("Raw input: ");
         while not End_Of_File (Input_File) loop
 
             Read(Input_File, C); 
 
-            WC := W & C;
+            Current_String_Plus_Char := Current_String & C;
 
-            if H.Contains(WC) then
-                W := WC;
+            if Dictionnary.Contains(Current_String_Plus_Char) then
+                Current_String := Current_String_Plus_Char;
 
             else
-                H.Include(WC, Long_Long_Integer(H.Length));
+                Dictionnary.Include(Current_String_Plus_Char, Integer(Dictionnary.Length));
 
-                X := Long_Long_Integer(H(W)); -- index
+                Index := Integer(Dictionnary(Current_String));
 
-                Bits_To_Pack_Current := Bits_To_Pack;
+                Remaining_Bits_To_Pack_For_Current_Index := Bits_Pack_Size;
 
-                Pack_Loop:
+                Bits_Packing_Loop:
                 while True loop
-                    S := Bits_To_Pack_Current - Byte_Remaining_Bits;
-                    V_To_Pack := Long_Long_Integer(Shift_Right(Unsigned_64(X),S));
-                    X := X mod (2 ** S);
-                    Bits_To_Pack_Current := S;
-                    Prev_V_To_Pack := Long_Long_Integer(Shift_Left(Unsigned_64(Byte_Current_Value), Byte_Remaining_Bits));
-                    Byte_To_Write  := Long_Long_Integer(Unsigned_64(Prev_V_To_Pack) or Unsigned_64(V_To_Pack));
+                    Bit_Shift_Size := Remaining_Bits_To_Pack_For_Current_Index - Byte_Free_Bits;
 
-                    Write(Output_File,Character'Val(Byte_To_Write));
+                    Byte_Value_To_Append := Integer(Shift_Right(Unsigned_32(Index),Bit_Shift_Size));
+
+                    Index := Index mod (2 ** Bit_Shift_Size);
+
+                    Remaining_Bits_To_Pack_For_Current_Index := Bit_Shift_Size;
+
+                    Byte_Value := Integer(Shift_Left(Unsigned_32(Byte_Value), Byte_Free_Bits));
+                    Byte_Value := Integer(Unsigned_32(Byte_Value) or Unsigned_32(Byte_Value_To_Append));
+
+                    Write(Output_File,Character'Val(Byte_Value));
                     --Put(Byte_To_Write'Image);
 
-                    Byte_Remaining_Bits := 8;
+                    Byte_Free_Bits := 8;
 
-                    if Bits_To_Pack_Current >= 8 then
-                        Byte_Current_Value := 0;
+                    if Remaining_Bits_To_Pack_For_Current_Index >= 8 then
+                        Byte_Value := 0;
                     else
-                        Byte_Remaining_Bits := 8 - Bits_To_Pack_Current;
-                        Byte_Current_Value := X;
-                        exit Pack_Loop;
+                        Byte_Free_Bits := 8 - Remaining_Bits_To_Pack_For_Current_Index;
+                        Byte_Value := Index;
+                        exit Bits_Packing_Loop;
                     end if;
 
-                end loop Pack_Loop;
+                end loop Bits_Packing_Loop;
                 
-                if H.Length >= 2 ** Bits_To_Pack then
-                    Bits_To_Pack := Bits_To_Pack + 1;
+                if Dictionnary.Length >= 2 ** Bits_Pack_Size then
+                    Bits_Pack_Size := Bits_Pack_Size + 1;
                 end if;
 
-                W := To_Unbounded_String("") & C;
+                -- TODO: fail if Dictionnary.Length >= 2 ** 32
+
+                Current_String := To_Unbounded_String("") & C;
             end if;
         end loop;
 
-        ---- just for last value, we are forcibly on W contained in H
-        ---- so we have to write W index in encoded
-        Last_Index := Long_Long_Integer(H(W));
-        Bits_To_Pack_Current := Bits_To_Pack;
+        -- Not forgetting to encode remaining bytes.
+        -- We are forcibly on Current_String contained in Dictionnary
+        -- So simply encode Current_String index.
+        Last_Index := Integer(Dictionnary(Current_String));
+        Remaining_Bits_To_Pack_For_Current_Index := Bits_Pack_Size;
 
-        Last_Pack_Loop:
+        Last_Bits_Packing_Loop:
         while True loop
-            S := Bits_To_Pack_Current - Byte_Remaining_Bits;
-            V_To_Pack := Long_Long_Integer(Shift_Right(Unsigned_64(Last_Index),S));
-            Last_Index := Last_Index mod (2 ** S);
-            Bits_To_Pack_Current := S;
-            Prev_V_To_Pack := Long_Long_Integer(Shift_Left(Unsigned_64(Byte_Current_Value), Byte_Remaining_Bits));
-            Byte_To_Write  := Long_Long_Integer(Unsigned_64(Prev_V_To_Pack) or Unsigned_64(V_To_Pack));
+            Bit_Shift_Size := Remaining_Bits_To_Pack_For_Current_Index - Byte_Free_Bits;
 
-            Write(Output_File,Character'Val(Byte_To_Write));
+            Byte_Value_To_Append := Integer(Shift_Right(Unsigned_32(Last_Index),Bit_Shift_Size));
+
+            Last_Index := Last_Index mod (2 ** Bit_Shift_Size);
+
+            Remaining_Bits_To_Pack_For_Current_Index := Bit_Shift_Size;
+
+            Byte_Value := Integer(Shift_Left(Unsigned_32(Byte_Value), Byte_Free_Bits));
+            Byte_Value := Integer(Unsigned_32(Byte_Value) or Unsigned_32(Byte_Value_To_Append));
+
+            Write(Output_File,Character'Val(Byte_Value));
             --Put(">>" & Byte_To_Write'Image);
 
-            Byte_Remaining_Bits := 8;
+            Byte_Free_Bits := 8;
 
-            if Bits_To_Pack_Current >= 8 then
-                Byte_Current_Value := 0;
+            if Remaining_Bits_To_Pack_For_Current_Index >= 8 then
+                Byte_Value := 0;
             else
-                Byte_Remaining_Bits := 8 - Bits_To_Pack_Current;
-                Byte_Current_Value := Last_Index;
-                Byte_To_Write  := Long_Long_Integer(Shift_Left(Unsigned_64(Byte_Current_Value),Byte_Remaining_Bits));
-                Write(Output_File,Character'Val(Byte_To_Write));
+                Byte_Free_Bits := 8 - Remaining_Bits_To_Pack_For_Current_Index;
+                Byte_Value := Last_Index;
+                Byte_Value := Integer(Shift_Left(Unsigned_32(Byte_Value),Byte_Free_Bits));
+                Write(Output_File,Character'Val(Byte_Value));
                 -- TODO: do i need to pad with zero's behind?
-                exit Last_Pack_Loop;
+                exit Last_Bits_Packing_Loop;
             end if;
 
-        end loop Last_Pack_Loop;
+        end loop Last_Bits_Packing_Loop;
 
         Close(Input_File);
         Close(Output_File);
 
     end Encode_Lzw;
+
+
     
-    procedure Decode_Lzw (Encoded_File_Path: String; Output_File_Path: String) is
+    procedure Decode_Lzw (Input_File_Path: String; Output_File_Path: String) is
         use Character_IO;
-        Encoded_File: Character_IO.File_Type;
-        Byte: Character; -- current read byte from encoded file (char)
-        
-        Decoded_File: Character_IO.File_Type;
+        Input_File: Character_IO.File_Type;
+        Output_File: Character_IO.File_Type;
 
-        C : Character;
+        Dictionnary: Decoding_Hashed_Maps.Map;
 
-        Bits_To_Read: Integer := 9;
-        Remaining_Bits_To_Read: Integer := Bits_To_Read;
-        V: Long_Long_Integer := 0; -- Will correspond to the value of an index in dictionnary
+        -- TODO: Allow read size to be flexible for speed increase.
+        -- For now we simply read Input_File byte by byte.
+        C: Character; -- current read byte from encoded file (char)
+        Current_String: Unbounded_String;
 
-        W: Unbounded_String;
-        Decoded: Unbounded_String;
-        New_Entry: Unbounded_String;
+        Bits_Pack_Size: Integer := 9;
+        Remaining_Bits_To_Unpack_For_Current_Index: Integer := Bits_Pack_Size;
 
-        H: Decoding_Hashed_Maps.Map;
+        Index: Integer := 0;
+
+        New_Entry : Unbounded_String;
     begin
-        Initialize_Alphabet_Decoding(H);
+        Initialize_Decoding_Dictionnary(Dictionnary);
 
-        Open (File => Encoded_File, 
+        Open (File => Input_File, 
               Mode => In_File, 
-              Name => Encoded_File_Path);
+              Name => Input_File_Path);
 
-        Create (File => Decoded_File,
+        Create (File => Output_File,
                 Mode => Out_File,
                 Name => Output_File_Path);
 
-        -----------------------------------------
+        -- Decode first character (decoding must caught up, encoding is one step ahead)
         while True loop
-            Read(Encoded_File, Byte);
-            Remaining_Bits_To_Read := Remaining_Bits_To_Read - 8;
 
-            if Remaining_Bits_To_Read > 0 then
-                V := V + Long_Long_Integer(Shift_Left(Unsigned_64(Character'Pos(Byte)),Remaining_Bits_To_Read));
+            Read(Input_File, C);
+            Remaining_Bits_To_Unpack_For_Current_Index := Remaining_Bits_To_Unpack_For_Current_Index - 8;
+
+            if Remaining_Bits_To_Unpack_For_Current_Index > 0 then
+                Index := Index + Integer(Shift_Left(Unsigned_32(Character'Pos(C)),Remaining_Bits_To_Unpack_For_Current_Index));
             else
-                V := V + Long_Long_Integer(Shift_Right(Unsigned_64(Character'Pos(Byte)),abs Remaining_Bits_To_Read));
-                --Put(V'Image & " ");
+                Index := Index + Integer(Shift_Right(Unsigned_32(Character'Pos(C)),abs Remaining_Bits_To_Unpack_For_Current_Index));
+                --Put(Index'Image & " ");
 
-                W := H(V);
-                for I in 1..Length(W) loop
-                    Write(Decoded_File, Element(W,I));
+                Current_String := Dictionnary(Index);
+                for I in 1..Length(Current_String) loop
+                    Write(Output_File, Element(Current_String,I));
                 end loop;
 
-                if H.Length >= (2 ** Bits_To_Read) - 1 then
-                    Bits_To_Read := Bits_To_Read + 1;
-                    --Put_Line("H.Length = " & H.Length'Image & " ; Unpacking size = " & Bits_To_Read'Image & " bits");
+                if Dictionnary.Length >= (2 ** Bits_Pack_Size) - 1 then
+                    Bits_Pack_Size := Bits_Pack_Size + 1;
                 end if;
 
-                -- new V for next iteration
-                V := Long_Long_Integer(Character'Pos(Byte)) mod 2 ** (abs Remaining_Bits_To_Read);
-                V := Long_Long_Integer(Shift_Left(Unsigned_64(V),Bits_To_Read - abs Remaining_Bits_To_Read ));
-                Remaining_Bits_To_Read := Bits_To_Read - abs Remaining_Bits_To_Read;
-                exit;
+                Index := Integer(Character'Pos(C)) mod 2 ** (abs Remaining_Bits_To_Unpack_For_Current_Index);
+                Index := Integer(Shift_Left(Unsigned_32(Index),Bits_Pack_Size - abs Remaining_Bits_To_Unpack_For_Current_Index ));
+
+                Remaining_Bits_To_Unpack_For_Current_Index := Bits_Pack_Size - abs Remaining_Bits_To_Unpack_For_Current_Index;
+
+                exit; -- remember we need first char only
+
             end if;
         end loop;
-        ----------------------------------
 
-        --Put("Decoded : ");
+        -- and go on
+        while Remaining_Bits_To_Unpack_For_Current_Index > 0 and not End_Of_File(Input_File) loop
 
-        while Remaining_Bits_To_Read > 0 and not End_Of_File(Encoded_File) loop
-
-            if Remaining_Bits_To_Read = 0 then
-                Remaining_Bits_To_Read := Bits_To_Read;
+            if Remaining_Bits_To_Unpack_For_Current_Index = 0 then
+                Remaining_Bits_To_Unpack_For_Current_Index := Bits_Pack_Size;
             end if;
 
-            Read(Encoded_File, Byte);
-            Remaining_Bits_To_Read := Remaining_Bits_To_Read - 8;
+            Read(Input_File, C);
+            Remaining_Bits_To_Unpack_For_Current_Index := Remaining_Bits_To_Unpack_For_Current_Index - 8;
 
-            if Remaining_Bits_To_Read > 0 then
-                V := V + Long_Long_Integer(Shift_Left(Unsigned_64(Character'Pos(Byte)),Remaining_Bits_To_Read));
+            if Remaining_Bits_To_Unpack_For_Current_Index > 0 then
+                Index := Index + Integer(Shift_Left(Unsigned_32(Character'Pos(C)),Remaining_Bits_To_Unpack_For_Current_Index));
             else
-                V := V + Long_Long_Integer(Shift_Right(Unsigned_64(Character'Pos(Byte)),abs Remaining_Bits_To_Read));
-                --Put(V'Image & " ");
+                Index := Index + Integer(Shift_Right(Unsigned_32(Character'Pos(C)),abs Remaining_Bits_To_Unpack_For_Current_Index));
+                --Put(Index'Image & " ");
 
-                -- retrieve string corresponding to this index
-                if H.Contains(V) then
-                    New_Entry := H(V);
-                    --Put("(" & To_String(New_Entry) & "," & V'Image & ")");
-                --elsif V = Long_Long_Integer(H.Length) then
+                if Dictionnary.Contains(Index) then
+                    New_Entry := Dictionnary(Index);
+
+                elsif Index = Integer(Dictionnary.Length) then
+                    New_Entry := Current_String & Element(Current_String,1); -- this is how you access a char in unbounded string... lol
+
                 else
-                    New_Entry := W & Element(W,1); -- this is how you access a char in unbounded string... lol
-                    --Put("=>> " & To_String(New_Entry));
+                    raise Exceptions.Unreachable with "Invalid index";
+
                 end if;
 
                 --Put(To_String(New_Entry));
-                --Decoded := Decoded & New_Entry;
                 for I in 1..Length(New_Entry) loop
-                    Write(Decoded_File, Element(New_Entry,I));
+                    Write(Output_File, Element(New_Entry,I));
                 end loop;
 
 
-                H.Include(Long_Long_Integer(H.Length), W & Element(New_Entry,1));
-                W := New_Entry;
+                Dictionnary.Include(Integer(Dictionnary.Length), Current_String & Element(New_Entry,1));
+                Current_String := New_Entry;
 
-                if H.Length >= (2 ** Bits_To_Read) - 1 then
-                    Bits_To_Read := Bits_To_Read + 1;
-                    --Put_Line("H.Length = " & H.Length'Image & " ; Unpacking size = " & Bits_To_Read'Image & " bits");
+                if Dictionnary.Length >= (2 ** Bits_Pack_Size) - 1 then
+                    Bits_Pack_Size := Bits_Pack_Size + 1;
                 end if;
+                -- TODO: fail if Dictionnary.Length >= 2 ** 32
 
-                -- new V for next iteration
-                V := Long_Long_Integer(Character'Pos(Byte)) mod 2 ** (abs Remaining_Bits_To_Read);
-                V := Long_Long_Integer(Shift_Left(Unsigned_64(V),Bits_To_Read - abs Remaining_Bits_To_Read ));
-                Remaining_Bits_To_Read := Bits_To_Read - abs Remaining_Bits_To_Read;
+                -- new Index for next iteration
+                Index := Integer(Character'Pos(C)) mod 2 ** (abs Remaining_Bits_To_Unpack_For_Current_Index);
+                Index := Integer(Shift_Left(Unsigned_32(Index),Bits_Pack_Size - abs Remaining_Bits_To_Unpack_For_Current_Index ));
+
+                Remaining_Bits_To_Unpack_For_Current_Index := Bits_Pack_Size - abs Remaining_Bits_To_Unpack_For_Current_Index;
 
             end if;
         end loop;
 
-        --Decoded := Decoded & New_Entry;
+        Close(Input_File);
+        Close(Output_File);
 
-        --Put_Line("");
-        --Put_Line("Decoded String: " & To_String(Decoded));
-        --Put_Line(To_String(Decoded));
-
-        Close(Encoded_File);
     end Decode_Lzw;
 
 begin
