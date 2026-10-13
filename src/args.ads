@@ -11,6 +11,7 @@ package Args is
     Input_File_Path  : Unbounded_String := To_Unbounded_String("");
     Output_File_Path : Unbounded_String := To_Unbounded_String("");
     Mode : Process_Mode := None;
+    Max_Bits_Pack_Size : Integer := 62;
 
     procedure Usage (Exit_Code: Integer; Error_Message: String := "");
     function Parse_Args return Integer;

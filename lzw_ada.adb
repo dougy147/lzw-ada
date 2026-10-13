@@ -9,9 +9,14 @@ begin
     end if;
 
     if Args.Mode = Compress then
-        Lzw.Encode_Lzw (To_String(Input_File_Path), To_String(Output_File_Path));
+        Lzw.Encode_Lzw (Input_File_Path    => To_String(Input_File_Path),
+                        Output_File_Path   => To_String(Output_File_Path),
+                        Max_Bits_Pack_Size => Max_Bits_Pack_Size);
+
     elsif Args.Mode = Decompress then
-        Lzw.Decode_Lzw (To_String(Input_File_Path), To_String(Output_File_Path));
+        Lzw.Decode_Lzw (Input_File_Path    => To_String(Input_File_Path),
+                        Output_File_Path   => To_String(Output_File_Path),
+                        Max_Bits_Pack_Size => Max_Bits_Pack_Size);
     end if;
 
     return 0;

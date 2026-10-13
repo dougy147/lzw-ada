@@ -8,7 +8,8 @@ package body Args is
         Put_Line("    c|compress");
         Put_Line("    d|decompress");
         Put_Line("OPTS:");
-        Put_Line("    -o|--output <FILE>");
+        Put_Line("    -o|--output <FILE>  : default=INPUT_FILE.lzw");
+        Put_Line("    -b|--max-bits <INT> : limit for bits-packing size");
 
         if Exit_Code /= 0 then
             raise PROGRAM_ERROR with "[!] " & Error_Message;
@@ -37,6 +38,16 @@ package body Args is
                         Usage(1, "`" & Argument(I) & "` expects an output file path");
                     end if;
                     Output_File_Path := To_Unbounded_String(Argument(I+1));
+                    Pass_Arg := True;
+       
+                elsif Argument(I) = "-b" or Argument(I) = "--max-bits" then
+                    if I + 1 > Argument_Count then
+                        Usage(1, "`" & Argument(I) & "` expects an integer");
+                    end if;
+                    Max_Bits_Pack_Size := Integer'Value(Argument(I+1)); -- TODO ensure conversion is possible
+                    if Max_Bits_Pack_Size > 62 then
+                        Usage(1, "Compressing the universe!? We limited bits-packing to 62, sorry.");
+                    end if;
                     Pass_Arg := True;
 
                 else

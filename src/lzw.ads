@@ -33,7 +33,7 @@ package Lzw is
 
     procedure Initialize_Encoding_Dictionnary (D: out Encoding_Hashed_Maps.Map);
     procedure Initialize_Decoding_Dictionnary (D: out Decoding_Hashed_Maps.Map);
-    procedure Encode_Lzw (Input_File_Path: in String; Output_File_Path: in String);
-    procedure Decode_Lzw (Input_File_Path: in String; Output_File_Path: in String);
+    procedure Encode_Lzw (Input_File_Path: in String; Output_File_Path: in String; Max_Bits_Pack_Size: in Integer);
+    procedure Decode_Lzw (Input_File_Path: in String; Output_File_Path: in String; Max_Bits_Pack_Size: in Integer);
 
 end Lzw;

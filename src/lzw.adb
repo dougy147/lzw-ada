@@ -23,7 +23,7 @@ package body Lzw is
         end loop;
     end;
     
-    procedure Encode_Lzw (Input_File_Path: String; Output_File_Path: String) is
+    procedure Encode_Lzw (Input_File_Path: String; Output_File_Path: String; Max_Bits_Pack_Size: Integer) is
         -- Read input file bufferized (~some small perf increase)
         Input_File: Stream_IO.File_Type;
         Data: Stream_Element_Array (1 .. 1024 * 1024); -- 1Mb chunks
@@ -82,7 +82,9 @@ package body Lzw is
                     Current_String := Current_String_Plus_Char;
 
                 else
-                    Dictionnary.Include(Current_String_Plus_Char, Integer(Dictionnary.Length));
+                    if Long_Integer(Dictionnary.Length) < Long_Integer(2 ** Max_Bits_Pack_Size) - 1 then
+                        Dictionnary.Include(Current_String_Plus_Char, Integer(Dictionnary.Length));
+                    end if;
 
                     Index := Integer(Dictionnary(Current_String));
 
@@ -116,11 +118,9 @@ package body Lzw is
 
                     end loop Bits_Packing_Loop;
                     
-                    if Dictionnary.Length >= 2 ** Bits_Pack_Size then
+                    if Long_Integer(Dictionnary.Length) >= Long_Integer(2 ** Bits_Pack_Size) and Bits_Pack_Size < Max_Bits_Pack_Size then
                         Bits_Pack_Size := Bits_Pack_Size + 1;
                     end if;
-
-                    -- TODO: fail if Dictionnary.Length >= 2 ** 32
 
                     Current_String := To_Unbounded_String("") & C;
                 end if;
@@ -169,7 +169,7 @@ package body Lzw is
 
     end Encode_Lzw;
 
-    procedure Decode_Lzw (Input_File_Path: String; Output_File_Path: String) is
+    procedure Decode_Lzw (Input_File_Path: String; Output_File_Path: String; Max_Bits_Pack_Size: Integer) is
         use Character_IO;
         Input_File: Character_IO.File_Type;
         Output_File: Character_IO.File_Type;
@@ -241,6 +241,7 @@ package body Lzw is
 
             if Remaining_Bits_To_Unpack_For_Current_Index > 0 then
                 Index := Index + Integer(Shift_Left(Unsigned_32(Character'Pos(C)),Remaining_Bits_To_Unpack_For_Current_Index));
+
             else
                 Index := Index + Integer(Shift_Right(Unsigned_32(Character'Pos(C)),abs Remaining_Bits_To_Unpack_For_Current_Index));
                 --Put(Index'Image & " ");
@@ -261,14 +262,14 @@ package body Lzw is
                     Write(Output_File, Element(New_Entry,I));
                 end loop;
 
-
-                Dictionnary.Include(Integer(Dictionnary.Length), Current_String & Element(New_Entry,1));
+                if Long_Integer(Dictionnary.Length) < Long_Integer(2 ** Max_Bits_Pack_Size) - 1 then
+                    Dictionnary.Include(Integer(Dictionnary.Length), Current_String & Element(New_Entry,1));
+                end if;
                 Current_String := New_Entry;
 
-                if Dictionnary.Length >= (2 ** Bits_Pack_Size) - 1 then
+                if Long_Integer(Dictionnary.Length) >= Long_Integer(2 ** Bits_Pack_Size) - 1 and Bits_Pack_Size < Max_Bits_Pack_Size then
                     Bits_Pack_Size := Bits_Pack_Size + 1;
                 end if;
-                -- TODO: fail if Dictionnary.Length >= 2 ** 32
 
                 -- new Index for next iteration
                 Index := Integer(Character'Pos(C)) mod 2 ** (abs Remaining_Bits_To_Unpack_For_Current_Index);
