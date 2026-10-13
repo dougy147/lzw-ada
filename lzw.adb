@@ -24,8 +24,12 @@ package body Lzw is
     end;
     
     procedure Encode_Lzw (Input_File_Path: String; Output_File_Path: String) is
+        -- Read input file bufferized (~some small perf increase)
+        Input_File: Stream_IO.File_Type;
+        Data: Stream_Element_Array (1 .. 1024 * 1024); -- 1Mb chunks
+        Last: Stream_Element_Offset;
+
         use Character_IO;
-        Input_File: Character_IO.File_Type;
         Output_File: Character_IO.File_Type;
 
         Dictionnary: Encoding_Hashed_Maps.Map;
@@ -53,6 +57,7 @@ package body Lzw is
         Last_Index : Integer;
 
         Bit_Shift_Size : Integer; -- for readability
+
     begin
 
         Initialize_Encoding_Dictionnary(Dictionnary);
@@ -67,56 +72,60 @@ package body Lzw is
 
         while not End_Of_File (Input_File) loop
 
-            Read(Input_File, C); 
+            Read(Input_File, Data, Last); -- eat a chunk
 
-            Current_String_Plus_Char := Current_String & C;
+            for Elem of Data (1..Last) loop
+                C := Character'Val(Elem);
 
-            if Dictionnary.Contains(Current_String_Plus_Char) then
-                Current_String := Current_String_Plus_Char;
+                Current_String_Plus_Char := Current_String & C;
 
-            else
-                Dictionnary.Include(Current_String_Plus_Char, Integer(Dictionnary.Length));
+                if Dictionnary.Contains(Current_String_Plus_Char) then
+                    Current_String := Current_String_Plus_Char;
 
-                Index := Integer(Dictionnary(Current_String));
+                else
+                    Dictionnary.Include(Current_String_Plus_Char, Integer(Dictionnary.Length));
 
-                Remaining_Bits_To_Pack_For_Current_Index := Bits_Pack_Size;
+                    Index := Integer(Dictionnary(Current_String));
 
-                Bits_Packing_Loop:
-                while True loop
-                    Bit_Shift_Size := Remaining_Bits_To_Pack_For_Current_Index - Byte_Free_Bits;
+                    Remaining_Bits_To_Pack_For_Current_Index := Bits_Pack_Size;
 
-                    Byte_Value_To_Append := Integer(Shift_Right(Unsigned_32(Index),Bit_Shift_Size));
+                    Bits_Packing_Loop:
+                    while True loop
+                        Bit_Shift_Size := Remaining_Bits_To_Pack_For_Current_Index - Byte_Free_Bits;
 
-                    Index := Index mod (2 ** Bit_Shift_Size);
+                        Byte_Value_To_Append := Integer(Shift_Right(Unsigned_32(Index),Bit_Shift_Size));
 
-                    Remaining_Bits_To_Pack_For_Current_Index := Bit_Shift_Size;
+                        Index := Index mod (2 ** Bit_Shift_Size);
 
-                    Byte_Value := Integer(Shift_Left(Unsigned_32(Byte_Value), Byte_Free_Bits));
-                    Byte_Value := Integer(Unsigned_32(Byte_Value) or Unsigned_32(Byte_Value_To_Append));
+                        Remaining_Bits_To_Pack_For_Current_Index := Bit_Shift_Size;
 
-                    Write(Output_File,Character'Val(Byte_Value));
-                    --Put(Byte_To_Write'Image);
+                        Byte_Value := Integer(Shift_Left(Unsigned_32(Byte_Value), Byte_Free_Bits));
+                        Byte_Value := Integer(Unsigned_32(Byte_Value) or Unsigned_32(Byte_Value_To_Append));
 
-                    Byte_Free_Bits := 8;
+                        Write(Output_File,Character'Val(Byte_Value));
+                        --Put(Byte_To_Write'Image);
 
-                    if Remaining_Bits_To_Pack_For_Current_Index >= 8 then
-                        Byte_Value := 0;
-                    else
-                        Byte_Free_Bits := 8 - Remaining_Bits_To_Pack_For_Current_Index;
-                        Byte_Value := Index;
-                        exit Bits_Packing_Loop;
+                        Byte_Free_Bits := 8;
+
+                        if Remaining_Bits_To_Pack_For_Current_Index >= 8 then
+                            Byte_Value := 0;
+                        else
+                            Byte_Free_Bits := 8 - Remaining_Bits_To_Pack_For_Current_Index;
+                            Byte_Value := Index;
+                            exit Bits_Packing_Loop;
+                        end if;
+
+                    end loop Bits_Packing_Loop;
+                    
+                    if Dictionnary.Length >= 2 ** Bits_Pack_Size then
+                        Bits_Pack_Size := Bits_Pack_Size + 1;
                     end if;
 
-                end loop Bits_Packing_Loop;
-                
-                if Dictionnary.Length >= 2 ** Bits_Pack_Size then
-                    Bits_Pack_Size := Bits_Pack_Size + 1;
+                    -- TODO: fail if Dictionnary.Length >= 2 ** 32
+
+                    Current_String := To_Unbounded_String("") & C;
                 end if;
-
-                -- TODO: fail if Dictionnary.Length >= 2 ** 32
-
-                Current_String := To_Unbounded_String("") & C;
-            end if;
+            end loop;
         end loop;
 
         -- Not forgetting to encode remaining bytes.
