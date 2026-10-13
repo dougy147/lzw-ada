@@ -1,6 +1,8 @@
 with Ada.Containers; use Ada.Containers;
 with Ada.Containers.Indefinite_Hashed_Maps;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Streams; use Ada.Streams;
+with Ada.Streams.Stream_IO; use Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded.Hash;
 with Ada.Sequential_IO;
 with Interfaces; use Interfaces;

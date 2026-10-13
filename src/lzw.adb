@@ -41,8 +41,7 @@ package body Lzw is
         Current_String_Plus_Char : Unbounded_String;
  
         -- TODO: We start encoding indexes in 9-bits and have
-        -- no upper limit. Hitting a 64-bits index limits seems... highly improbable
-        -- but we should certainly limit dictionnary length to ease on memory.
+        -- no upper limit. Hitting a 64-bits index limits seems... highly improbable -- but we should certainly limit dictionnary length to ease on memory.
         Bits_Pack_Size: Integer := 9;
         Remaining_Bits_To_Pack_For_Current_Index: Integer;
 
@@ -285,15 +284,4 @@ package body Lzw is
 
     end Decode_Lzw;
 
-    --Pack_Encoded_To_File(Encode_Lzw("/home/luc/stack/pacman.log"), "pacman.lzw");
-    
-    --Encode_Lzw("tobeornottobe.txt","tobeornottobe.lzw");
-    --Decode_Lzw("tobeornottobe.lzw","tobeornottobe.decoded");
-
-    --Encode_Lzw("README.md", "readme.lzw");
-    --Decode_Lzw("readme.lzw","readme.decoded");
-
-    --Encode_Lzw("pacman.log", "pacman.lzw");
-    --Decode_Lzw("pacman.lzw", "pacman.decoded");
-    --return 0;
 end Lzw;
