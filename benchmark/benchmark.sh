@@ -13,10 +13,11 @@ get_size() {
 
 bench() {
     local file=$1
+    local max_bits=${2:-32}
     original_size=$(get_size $file)
     echo -ne "$file\t$original_size"
     tmp=$(mktemp) 
-    $PROG_NAME c "$file" -o $tmp
+    $PROG_NAME c "$file" -b $max_bits -o $tmp
     compressed_size=$(get_size $tmp)
     echo -e "\t$compressed_size\t($(( (compressed_size * 100 / original_size) ))%)"
 }
@@ -24,11 +25,12 @@ bench() {
 PROG_NAME=./lzw_ada
 
 if [[ -d $1 ]]; then
-    echo "File" "Original-Size" "Compressed-Size"
+    echo "File" "Original-Size" "Compressed-Size" "${2:-32}-max-bits"
+    echo "----" "-------------" "---------------" "------------"
     for file in $1/*; do
         [[ -f $file ]] || continue
-        bench $file
+        bench $file $2
     done
 elif [[ -f $1 ]]; then
-    bench $1
+    bench $1 $2
 fi
