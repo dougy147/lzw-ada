@@ -3,9 +3,12 @@ with Args; use Args;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
 function Lzw_Ada return Integer is
+    Result_Parse_Args : Integer;
 begin
-    if Args.Parse_Args < 0 then -- user asked Usage
-        return 0;
+    Result_Parse_Args := Args.Parse_Args;
+
+    if Result_Parse_Args >= 0 then -- user asked Usage or args parsing error
+        return Result_Parse_Args;
     end if;
 
     if Args.Mode = Compress then

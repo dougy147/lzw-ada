@@ -3,6 +3,10 @@ package body Args is
     procedure Usage (Exit_Code: Integer; Error_Message: String := "") is
     begin
 
+        if Exit_Code /= 0 then
+            Put_Line(Standard_Error, "[!] " & Error_Message);
+        end if;
+
         Put_Line("USAGE: " & Command_Name & " <FLAGS> <INPUT_FILE> [OPTS]");
         Put_Line("FLAGS:");
         Put_Line("    c|compress");
@@ -11,9 +15,6 @@ package body Args is
         Put_Line("    -o|--output <FILE>  : default=INPUT_FILE.lzw");
         Put_Line("    -b|--max-bits <INT> : limit for bits-packing size");
 
-        if Exit_Code /= 0 then
-            raise PROGRAM_ERROR with "[!] " & Error_Message;
-        end if;
     end Usage;
 
     function Parse_Args return Integer is
@@ -25,7 +26,7 @@ package body Args is
 
                 if Argument(I) = "--help" or Argument(I) = "help" or Argument(I) = "-h" then
                     Usage(Exit_Code => 0);
-                    return -1;
+                    return 0;
 
                 elsif Argument(I) = "compress"   or Argument(I) = "c" then
                     Mode := Compress;
@@ -36,6 +37,7 @@ package body Args is
                 elsif Argument(I) = "-o" or Argument(I) = "--output" then
                     if I + 1 > Argument_Count then
                         Usage(1, "`" & Argument(I) & "` expects an output file path");
+                        return 1;
                     end if;
                     Output_File_Path := To_Unbounded_String(Argument(I+1));
                     Pass_Arg := True;
@@ -43,10 +45,12 @@ package body Args is
                 elsif Argument(I) = "-b" or Argument(I) = "--max-bits" then
                     if I + 1 > Argument_Count then
                         Usage(1, "`" & Argument(I) & "` expects an integer");
+                        return 1;
                     end if;
                     Max_Bits_Pack_Size := Integer'Value(Argument(I+1)); -- TODO ensure conversion is possible
                     if Max_Bits_Pack_Size > 62 then
                         Usage(1, "Compressing the universe!? We limited bits-packing to 62, sorry.");
+                        return 1;
                     end if;
                     Pass_Arg := True;
 
@@ -55,6 +59,7 @@ package body Args is
                     Input_File_Path := To_Unbounded_String(Argument(I));
                     if not Exists(To_String(Input_File_Path)) then
                         Usage(1, "`" & Argument(I) & "` is not a valid input file");
+                        return 1;
                     end if;
 
                 end if;
@@ -68,10 +73,12 @@ package body Args is
 
         if Input_File_Path = To_Unbounded_String("") then
             Usage(1, "Input file is required");
+            return 1;
         end if;
 
         if Mode = None then
             Usage(1,"Mode must be one of `compress`, `decompress`");
+            return 1;
         end if;
 
         if Output_File_Path = To_Unbounded_String("") then
@@ -82,7 +89,7 @@ package body Args is
             end if;
         end if;
 
-        return 0;
+        return -1;
     end;
 
 end Args;
