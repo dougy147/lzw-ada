@@ -86,7 +86,7 @@ package body Lzw is
                         Dictionnary.Include(Current_String_Plus_Char, Integer(Dictionnary.Length));
                     end if;
 
-                    Index := Integer(Dictionnary(Current_String));
+                    Index := Dictionnary(Current_String);
 
                     Remaining_Bits_To_Pack_For_Current_Index := Bits_Pack_Size;
 
@@ -130,7 +130,7 @@ package body Lzw is
         -- Not forgetting to encode remaining bytes.
         -- We are forcibly on Current_String contained in Dictionnary
         -- So simply encode Current_String index.
-        Last_Index := Integer(Dictionnary(Current_String));
+        Last_Index := Dictionnary(Current_String);
         Remaining_Bits_To_Pack_For_Current_Index := Bits_Pack_Size;
 
         Last_Bits_Packing_Loop:
