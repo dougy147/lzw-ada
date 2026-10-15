@@ -1,4 +1,22 @@
-package body Lzw is
+package body LZW is
+
+    function Encoded_Key_Hash (Key: in Encoded_Key) return Hash_Type is
+        -- TODO: How to hash tuples of two integers ""efficiently"" ??
+        -- 0m4.915s on ./benchmark
+        -- inspired by https://github.com/felixr/janet/commit/c1e1fd111e6844f7698f582eab8408a2fa0ecdb2
+        H : Unsigned_32 := 5381;
+    begin
+        H := (H * 32) + H + Unsigned_32(Key.Prefix_Index);
+        H := H xor + Unsigned_32(Key.Prefix_Index) + 2654435769 + (H * 64) + (H / 4);
+        H := (H * 32) + H + Unsigned_32(abs Key.Suffix_Code);
+        H := H xor + Unsigned_32(abs Key.Suffix_Code) + 2654435769 + (H * 64) + (H / 4);
+        return Hash_Type(H mod 2147483648);
+    end Encoded_Key_Hash;
+    
+    function Encoded_Key_Equivalence (Key_A, Key_B: in Encoded_Key) return Boolean is
+    begin
+        return Key_A.Prefix_Index = Key_B.Prefix_Index and Key_A.Suffix_Code = Key_B.Suffix_Code;
+    end Encoded_Key_Equivalence;
 
     function Integer_Hash (Key: Integer) return Hash_Type is
     begin
@@ -6,11 +24,12 @@ package body Lzw is
     end Integer_Hash;
 
     procedure Initialize_Encoding_Dictionnary (D: out Encoding_Hashed_Maps.Map) is
-        Current_String:  Unbounded_String;
+        Current_Key: Encoded_Key;
     begin
         for I in 0..255 loop
-            Current_String := To_Unbounded_String("") & Character'Val(I);
-            D.Include(Current_String, Integer(I));
+            Current_Key.Prefix_Index := I;
+            Current_Key.Suffix_Code  := -1;
+            D.Include(Current_Key, Integer(I));
         end loop;
     end;
     
@@ -23,7 +42,7 @@ package body Lzw is
         end loop;
     end;
     
-    procedure Encode_Lzw (Input_File_Path: String; Output_File_Path: String; Max_Bits_Pack_Size: Integer) is
+    procedure LZW_Compress (Input_File_Path: String; Output_File_Path: String; Max_Bits_Pack_Size: Integer) is
         -- Read input file bufferized (~some small perf increase)
         Input_File: Stream_IO.File_Type;
         Data: Stream_Element_Array (1 .. 1024 * 1024); -- 1Mb chunks
@@ -33,20 +52,21 @@ package body Lzw is
         Output_File: Character_IO.File_Type;
 
         Dictionnary: Encoding_Hashed_Maps.Map;
+        Dictionnary_Length: Integer;
+        Cursor: Encoding_Hashed_Maps.Cursor; -- for pointers instead of multiple pass in hash
 
-        -- TODO: Allow read size to be flexible for speed increase.
-        -- For now we simply read Input_File byte by byte.
-        C: Character; -- current byte read from input file
-        Current_String           : Unbounded_String;
-        Current_String_Plus_Char : Unbounded_String;
+        C: Integer; -- current byte read from input file
+        Current_Code : Integer := 0;
+        Current_Key : Encoded_Key;
  
-        -- TODO: We start encoding indexes in 9-bits and have
-        -- no upper limit. Hitting a 64-bits index limits seems... highly improbable -- but we should certainly limit dictionnary length to ease on memory.
+        use Encoding_Hashed_Maps;
+        First_Char: Stream_Element_Array (1 .. 1);
+
         Bits_Pack_Size: Integer := 9;
         Remaining_Bits_To_Pack_For_Current_Index: Integer;
 
-        -- NOTE: Remember we read Input_File byte by byte.
-        -- Hence we use this variable name and this 8 value. <|:^)
+        -- NOTE: Remember we process Input_File chunks byte by byte.
+        -- Hence this variable name and its value of 8. <|:^)
         Byte_Free_Bits : Integer := 8;
 
         Byte_Value           : Integer := 0;
@@ -59,7 +79,10 @@ package body Lzw is
 
     begin
 
+        Dictionnary.Reserve_Capacity(2 ** Max_Bits_Pack_Size);
+
         Initialize_Encoding_Dictionnary(Dictionnary);
+        Dictionnary_Length := Integer(Dictionnary.Length);
 
         Open (File => Input_File, 
               Mode => In_File, 
@@ -69,24 +92,32 @@ package body Lzw is
                Mode => Out_File,
                Name => Output_File_Path);
 
+        -- read first char
+        Read(Input_File, First_Char, Last);
+        C := Integer(First_Char(1));
+        --Put(C'Image);
+        Current_Code := Dictionnary((Prefix_Index => C, Suffix_Code => -1));
+
         while not End_Of_File (Input_File) loop
 
             Read(Input_File, Data, Last); -- eat a chunk
-
+           
             for Elem of Data (1..Last) loop
-                C := Character'Val(Elem);
+                C := Integer(Elem);
 
-                Current_String_Plus_Char := Current_String & C;
+                Current_Key := (Prefix_Index => Current_Code, Suffix_Code => C);
+                Cursor := Dictionnary.Find(Current_Key);
 
-                if Dictionnary.Contains(Current_String_Plus_Char) then
-                    Current_String := Current_String_Plus_Char;
+                if Cursor /= Encoding_Hashed_Maps.No_Element then
+                    Current_Code := Element(Cursor);
 
                 else
-                    if Long_Integer(Dictionnary.Length) < Long_Integer(2 ** Max_Bits_Pack_Size) - 1 then
-                        Dictionnary.Include(Current_String_Plus_Char, Integer(Dictionnary.Length));
+                    if Long_Integer(Dictionnary_Length) < Long_Integer(2 ** Max_Bits_Pack_Size) - 1 then
+                        Dictionnary.Insert(Current_Key, Dictionnary_Length);
+                        Dictionnary_Length := Dictionnary_Length + 1;
                     end if;
 
-                    Index := Dictionnary(Current_String);
+                    Index := Current_Code;
 
                     Remaining_Bits_To_Pack_For_Current_Index := Bits_Pack_Size;
 
@@ -118,19 +149,19 @@ package body Lzw is
 
                     end loop Bits_Packing_Loop;
                     
-                    if Long_Integer(Dictionnary.Length) >= Long_Integer(2 ** Bits_Pack_Size) and Bits_Pack_Size < Max_Bits_Pack_Size then
+                    if Long_Integer(Dictionnary_Length) >= Long_Integer(2 ** Bits_Pack_Size) and Bits_Pack_Size < Max_Bits_Pack_Size then
                         Bits_Pack_Size := Bits_Pack_Size + 1;
                     end if;
 
-                    Current_String := To_Unbounded_String("") & C;
+                    Current_Code := C;
                 end if;
             end loop;
         end loop;
 
         -- Not forgetting to encode remaining bytes.
-        -- We are forcibly on Current_String contained in Dictionnary
-        -- So simply encode Current_String index.
-        Last_Index := Dictionnary(Current_String);
+        -- We are forcibly on Current_Code contained in Dictionnary
+        -- So simply encode Current_Code index.
+        Last_Index := Current_Code;
         Remaining_Bits_To_Pack_For_Current_Index := Bits_Pack_Size;
 
         Last_Bits_Packing_Loop:
@@ -167,9 +198,9 @@ package body Lzw is
         Close(Input_File);
         Close(Output_File);
 
-    end Encode_Lzw;
+    end LZW_Compress;
 
-    procedure Decode_Lzw (Input_File_Path: String; Output_File_Path: String; Max_Bits_Pack_Size: Integer) is
+    procedure LZW_Decompress (Input_File_Path: String; Output_File_Path: String; Max_Bits_Pack_Size: Integer) is
         use Character_IO;
         Input_File: Character_IO.File_Type;
         Output_File: Character_IO.File_Type;
@@ -283,6 +314,6 @@ package body Lzw is
         Close(Input_File);
         Close(Output_File);
 
-    end Decode_Lzw;
+    end LZW_Decompress;
 
-end Lzw;
+end LZW;

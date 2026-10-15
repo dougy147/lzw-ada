@@ -47,11 +47,15 @@ package body Args is
                         Usage(1, "`" & Argument(I) & "` expects an integer");
                         return 1;
                     end if;
-                    Max_Bits_Pack_Size := Integer'Value(Argument(I+1)); -- TODO ensure conversion is possible
-                    if Max_Bits_Pack_Size > 62 then
-                        Usage(1, "Compressing the universe!? We limited bits-packing to 62, sorry.");
-                        return 1;
-                    end if;
+                    declare
+                        User_Bits_Pack_Size : Integer;
+                    begin
+                        User_Bits_Pack_Size := Integer'Value(Argument(I+1)); -- TODO ensure conversion is possible
+                        if User_Bits_Pack_Size > Max_Bits_Pack_Size then
+                            Usage(1, "Compressing the universe!? We limited bits-packing to" & Max_Bits_Pack_Size'Image & ", sorry.");
+                            return 1;
+                        end if;
+                    end;
                     Pass_Arg := True;
 
                 else
